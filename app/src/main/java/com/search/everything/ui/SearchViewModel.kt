@@ -152,11 +152,16 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
 
     fun checkStoragePermission() {
         val granted = hasAllFilesAccess()
-        val current = _storageState.value
-        if (granted && current is StorageState.NotGranted) {
-            startScanIfNeeded()
-        } else if (!granted) {
+        if (!granted) {
             _storageState.value = StorageState.NotGranted
+            return
+        }
+        // 已授权也不再自动扫描：直接加载已有索引即可搜索；
+        // 索引更新全靠用户手动点"重建索引"（新装/删除文件后）
+        if (_storageState.value is StorageState.NotGranted) {
+            viewModelScope.launch(Dispatchers.IO) {
+                _storageState.value = StorageState.Ready(fileScanner.count())
+            }
         }
     }
 

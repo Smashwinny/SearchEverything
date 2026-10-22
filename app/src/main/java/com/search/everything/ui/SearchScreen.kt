@@ -158,9 +158,12 @@ fun SearchScreen(
                 }
                 is StorageState.Ready -> {
                     Text(
-                        "文件索引：${s.total} 个文件" +
-                            (if (lastFileScan > 0) " · 上次更新 ${formatTime(lastFileScan)}" else "") +
-                            "（新增文件点右上角\"重建索引\"刷新）",
+                        if (s.total > 0)
+                            "文件索引：${s.total} 个文件" +
+                                (if (lastFileScan > 0) " · 上次更新 ${formatTime(lastFileScan)}" else "") +
+                                "（不会自动扫描，有新增/删除文件时点右上角\"重建索引\"）"
+                        else
+                            "还没有文件索引，点右上角\"重建索引\"开始建立（只需扫一次，之后手动更新）",
                         Modifier.padding(bottom = 4.dp),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,

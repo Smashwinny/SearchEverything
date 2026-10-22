@@ -25,7 +25,7 @@ class MainActivity : ComponentActivity() {
     private val readStorageLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
-        if (granted) viewModel.startScanIfNeeded()
+        if (granted) viewModel.startScanIfNeeded(force = true) // 刚授权完做首次建索引
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -71,7 +71,7 @@ class MainActivity : ComponentActivity() {
             when (ContextCompat.checkSelfPermission(
                 this, Manifest.permission.READ_EXTERNAL_STORAGE
             )) {
-                PackageManager.PERMISSION_GRANTED -> viewModel.startScanIfNeeded()
+                PackageManager.PERMISSION_GRANTED -> viewModel.startScanIfNeeded(force = true)
                 else -> readStorageLauncher.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
             }
         }

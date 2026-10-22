@@ -109,23 +109,27 @@ class DesktopScanner(
         return ScanResult.Ok(locations)
     }
 
-    /** 扫描当前屏，逐个处理桌面项；中断返回 null */
+    /** 扫描当前屏；每次处理完文件夹后节点树会重建，必须重新枚举，故按下标循环 */
     private suspend fun scanPage(
         page: Int,
         out: MutableList<AppLocation>,
         onProgress: (String) -> Unit,
     ): Unit? {
-        val root = service.rootInActiveWindow ?: return null
-        if (root.packageName != HOME_PKG) return null
+        var idx = 0
+        while (true) {
+            val root = service.rootInActiveWindow ?: return null
+            if (root.packageName != HOME_PKG) return null
+            val items = collectItems(root, page)
+            if (idx == 0) {
+                Log.d(TAG, "page $page: ${items.size} items " +
+                    "(${items.count { it.isFolder }} folders, ${items.count { it.isDock }} dock)")
+            }
+            if (idx >= items.size) return Unit
+            val item = items[idx]
+            idx++
 
-        val items = collectItems(root, page)
-        Log.d(TAG, "page $page: ${items.size} items " +
-            "(${items.count { it.isFolder }} folders, ${items.count { it.isDock }} dock)")
-
-        for (item in items) {
             if (item.isFolder) {
                 onProgress("第 $page 屏：打开文件夹「${item.label}」")
-                // 同名文件夹主键冲突时加位置后缀
                 var folderEntryLabel = item.label
                 if (out.any { it.label == folderEntryLabel && it.isFolder }) {
                     folderEntryLabel = "${item.label}（第${page}屏 ${item.row}行${item.col}列）"
@@ -137,6 +141,7 @@ class DesktopScanner(
                     )
                 )
                 if (!scanFolder(item.node, item.label, page, out)) return null
+                delay(400) // 等文件夹关闭动画、节点树稳定后再重新枚举
             } else {
                 out.add(
                     AppLocation(
@@ -146,7 +151,6 @@ class DesktopScanner(
                 )
             }
         }
-        return Unit
     }
 
     private class DesktopItem(
@@ -248,7 +252,10 @@ class DesktopScanner(
         page: Int,
         out: MutableList<AppLocation>,
     ): Boolean {
-        if (!folderItem.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true // 点不动就跳过
+        if (!folderItem.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+            Log.w(TAG, "folder '$folderLabel' click failed, skipped")
+            return true // 点不动就跳过
+        }
         val grid = untilNode(timeoutMs = 3000) { root ->
             root?.findAccessibilityNodeInfosByViewId("$HOME_PKG:id/folder_grid_view")
                 ?.firstOrNull()
@@ -265,10 +272,12 @@ class DesktopScanner(
                 ?.firstOrNull()?.text?.toString()
         } ?: folderLabel
 
-        // 枚举文件夹内图标，可滚动就一直翻，直到没有新内容
+        // 枚举文件夹内图标：节点树只 inflate 可视行（约 15 个），
+        // ACTION_SCROLL_FORWARD 实测无效，必须用手势上滑，直到连续两屏没有新内容
         val seen = linkedSetOf<String>()
+        var noNewRounds = 0
         var guard = 0
-        while (guard++ < 20) {
+        while (guard++ < 40 && noNewRounds < 3) {
             val g = untilNode(1500) { root ->
                 root?.findAccessibilityNodeInfosByViewId("$HOME_PKG:id/folder_grid_view")
                     ?.firstOrNull()
@@ -282,9 +291,11 @@ class DesktopScanner(
                     ?: continue
                 if (name.isNotEmpty() && seen.add(name)) added = true
             }
-            if (!g.isScrollable || !added) break
-            if (!g.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)) break
-            delay(450)
+            if (!added) noNewRounds++ else noNewRounds = 0
+            if (!g.isScrollable) break
+            val gb = Rect().also { g.getBoundsInScreen(it) }
+            swipeUpIn(gb)
+            delay(650)
         }
 
         seen.forEachIndexed { idx, name ->
@@ -359,6 +370,25 @@ class DesktopScanner(
             delay(150)
         }
         return null
+    }
+
+    /** 在指定区域内上滑（文件夹内滚动用；launch 页的翻页用 swipe()） */
+    private suspend fun swipeUpIn(area: Rect) {
+        val x = area.centerX().toFloat()
+        val path = Path().apply {
+            moveTo(x, area.top + area.height() * 0.72f)
+            lineTo(x, area.top + area.height() * 0.28f)
+        }
+        val gesture = GestureDescription.Builder()
+            .addStroke(GestureDescription.StrokeDescription(path, 0, 380))
+            .build()
+        suspendCancellableCoroutine<Unit> { cont ->
+            service.dispatchGesture(gesture, object : AccessibilityService.GestureResultCallback() {
+                override fun onCompleted(g: GestureDescription?) { cont.resume(Unit) }
+                override fun onCancelled(g: GestureDescription?) { cont.resume(Unit) }
+            }, null)
+            cont.invokeOnCancellation {}
+        }
     }
 
     private suspend fun swipe(forward: Boolean) {
