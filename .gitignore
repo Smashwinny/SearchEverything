@@ -1,0 +1,11 @@
+# Gradle / Android
+.gradle/
+build/
+*/build/
+local.properties
+*.iml
+.idea/
+.cxx/
+
+# 临时产物（见全局规则）
+tmp/

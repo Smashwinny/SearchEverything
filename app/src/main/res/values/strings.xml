@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">SearchEverything</string>
+    <string name="a11y_desc">用于读取桌面图标和文件夹位置，扫描期间自动翻页和点开文件夹，不会读取其他应用内容</string>
+</resources>
