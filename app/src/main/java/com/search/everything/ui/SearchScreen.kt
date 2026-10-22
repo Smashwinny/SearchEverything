@@ -255,7 +255,8 @@ fun SearchScreen(
                     items(results.apps, key = { "app:" + it.packageName }) { app ->
                         AppRow(
                             app = app,
-                            location = locations[app.label],
+                            location = viewModel.locationFor(app.label),
+                            hasDesktopIndex = locations.isNotEmpty(),
                             onClick = { viewModel.launchApp(app.packageName) },
                             onLongClick = { viewModel.openAppDetails(app.packageName) },
                         )
@@ -329,6 +330,7 @@ private fun SectionHeader(title: String) {
 private fun AppRow(
     app: AppInfo,
     location: AppLocation?,
+    hasDesktopIndex: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
 ) {
@@ -360,6 +362,14 @@ private fun AppRow(
                     location.describe(),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.primary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            } else if (hasDesktopIndex) {
+                Text(
+                    "桌面：未找到图标（不在任何一屏/文件夹里）",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )

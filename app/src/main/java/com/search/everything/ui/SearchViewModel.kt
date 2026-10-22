@@ -72,16 +72,32 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
     private val _lastFileScan = MutableStateFlow(prefs.getLong("last_file_scan", 0L))
     val lastFileScan = _lastFileScan.asStateFlow()
 
-    /** 图标名 -> 桌面位置（上次扫描结果） */
+    /** 图标名 -> 桌面位置（上次扫描结果），键做过归一化（去空格小写） */
     private val _locations = MutableStateFlow<Map<String, AppLocation>>(emptyMap())
     val locations = _locations.asStateFlow()
+
+    /** 桌面索引的规范化键，容忍启动器名称与 PackageManager 名称的空格/大小写差异 */
+    private fun locKey(label: String) = label.replace(Regex("\\s+"), "").lowercase()
+
+    private fun Map<String, AppLocation>.normalized(): Map<String, AppLocation> =
+        mapKeys { (k, _) -> locKey(k) }
+
+    /** 查询某应用的桌面位置（名称归一化后匹配） */
+    fun locationFor(label: String): AppLocation? = _locations.value[locKey(label)]
 
     private var allApps: List<AppInfo> = emptyList()
 
     init {
         viewModelScope.launch(Dispatchers.IO) {
             allApps = appRepo.loadApps()
-            _locations.value = locationDao.all().associateBy { it.label }
+            _locations.value = locationDao.all().associateBy { it.label }.normalized()
+            // 调试：导出已装应用名清单，方便比对桌面索引覆盖率
+            if (com.search.everything.BuildConfig.DEBUG) {
+                try {
+                    val f = java.io.File(getApplication<Application>().filesDir, "app_labels.txt")
+                    f.writeText(allApps.joinToString("\n") { "${it.label}\t${it.packageName}" })
+                } catch (_: Exception) {}
+            }
         }
         viewModelScope.launch {
             _query.debounce(150).collectLatest { q ->
@@ -200,7 +216,7 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
                 is DesktopScanner.ScanResult.Ok -> {
                     locationDao.clear()
                     locationDao.upsertAll(result.locations)
-                    _locations.value = result.locations.associateBy { it.label }
+                    _locations.value = result.locations.associateBy { it.label }.normalized()
                     _desktopState.value = DesktopState.Done(result.locations.size)
                     System.currentTimeMillis().let { now ->
                         prefs.edit().putLong("last_desktop_scan", now).apply()
